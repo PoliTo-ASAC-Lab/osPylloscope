@@ -3,12 +3,8 @@ from datetime import datetime as dt
 import random
 import socket
 import struct
-import math
 
-T_SAMPLE_ms = 5
-T_VISUALIZE_ms = 10
-samples_between_visualization = math.floor(T_VISUALIZE_ms / T_SAMPLE_ms)
-samples_cnt = 0
+T_SAMPLE_ms = 20
 
 if __name__ == '__main__':
     #   Socket configuration
@@ -23,13 +19,10 @@ if __name__ == '__main__':
     print(f"CONNECTED\n")
 
     while True:
-        samples_cnt += 1
         data = 500 * random.random()
         print(f"{dt.now().strftime('%H:%M:%S.%f')},{data}")
 
-        if samples_cnt == samples_between_visualization:
-            packed_data = packer.pack(data)
-            s.sendall(packed_data)
-            samples_cnt = 0
+        packed_data = packer.pack(data)
+        s.sendall(packed_data)
 
-        time.sleep(T_SAMPLE_ms/1000)
+        time.sleep(T_SAMPLE_ms / 1000)
