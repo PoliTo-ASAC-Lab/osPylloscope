@@ -6,15 +6,16 @@ from datetime import datetime as dt
 import struct
 import socket
 import warnings
+import threading
 
-global conn, PYNQ_address, s
+global conn, PYNQ_address, s, xy
 
 HOST = "127.0.0.1"  # check ipconfig /all to match proper ip add
 PORT = 4929  # arbitrary, chosen here, must match at the client side
 
 THRESHOLD = 500  # uA
 SHOWN_TIME_WINDOW_s = 50
-T_VISUALIZE_ms = 100  # ca. 1ms for pack->transfer->unpack
+T_VISUALIZE_ms = 300
 
 
 class Scope:
@@ -34,7 +35,7 @@ class Scope:
         self.ax.yaxis.set_major_locator(plt.MaxNLocator(40))  # set number of Y-axis ticks
         self.ax.grid(True)
 
-    def update(self, xy):
+    def update(self, xy_sample):
         lastt = self.tdata[-1]
         if lastt > self.tdata[0] + self.maxt:  # reset the arrays
             self.tdata = [self.tdata[-1]]
@@ -43,38 +44,23 @@ class Scope:
             self.ax.axhline(linewidth=2, color='r', y=THRESHOLD)
             self.ax.figure.canvas.draw()
         t = self.tdata[-1] + self.dt
-            #if len(self.tdata) == 1:
-            #    t = self.tdata[-1] + self.dt
-            #else:
-            #    t = self.tdata[-1] + (self.tdata[-1] - self.tdata[-2])  # adaptive dt
+        # if len(self.tdata) == 1:
+        #    t = self.tdata[-1] + self.dt
+        # else:
+        #    t = self.tdata[-1] + (self.tdata[-1] - self.tdata[-2])  # adaptive dt
         self.tdata.append(t)
-        self.ydata.append(xy[1])
+        self.ydata.append(xy_sample[1])
 
-        print(f"\t--> {dt.now().strftime('%H:%M:%S.%f')} : [{t},{xy[1]}]")
+        print(f"\t--> {dt.now().strftime('%H:%M:%S.%f')} : [{t},{xy_sample[1]}]")
         self.line.set_data(self.tdata, self.ydata)
         self.ax.axhline(linewidth=2, color='r', y=THRESHOLD)
         return self.line,
 
 
 def emitter():
-    rcvd_data = False
-    unpacker = struct.Struct('f')
-    xy = []
-    while not rcvd_data:
-        data = conn.recv(unpacker.size)
-
-        if not data:
-            print("PYNQ disconnected!")
-            connector()  # wait for new connection
-        else:
-            y = unpacker.unpack(data)[0]  # converting current measurement in float (it is sent as a string)
-            x = dt.now().strftime('%H:%M:%S.%f')
-            xy = [x, y]
-            print(xy)
-            rcvd_data = True
-
+    global xy
     # print(f"yielding {xy}")
-    yield xy
+    yield xy[0] if xy != [] else [0, 0]  # read from global variable containing last reading
 
 
 def connection_init():
@@ -98,9 +84,29 @@ def connector():
     _ = conn.recv(8)
 
 
+def data_gatherer():
+    global xy
+    unpacker = struct.Struct('f')
+    xy = []
+    while True:
+        data = conn.recv(unpacker.size)
+        if not data:
+            print("dg: PYNQ disconnected!")
+            xy.pop()  # removing valid data to be visualized
+            connector()  # wait for new connection
+        else:
+            y = unpacker.unpack(data)[0]  # converting current measurement in float (it is sent as a bytearray)
+            x = dt.now().strftime('%H:%M:%S.%f')
+            xy = [[x, y]]
+            # print(xy)
+
+
 if __name__ == '__main__':
     connection_init()
     connector()
+    dg_thread = threading.Thread(target=data_gatherer, daemon=True)
+    dg_thread.start()
+
     fig, ax = plt.subplots()
     scope = Scope(ax)
 

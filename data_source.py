@@ -5,8 +5,8 @@ import socket
 import struct
 import math
 
-T_SAMPLE_ms = 10
-T_VISUALIZE_ms = 75
+T_SAMPLE_ms = 5
+T_VISUALIZE_ms = 10
 samples_between_visualization = math.floor(T_VISUALIZE_ms / T_SAMPLE_ms)
 samples_cnt = 0
 
