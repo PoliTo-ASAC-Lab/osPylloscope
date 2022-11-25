@@ -1,4 +1,4 @@
-#  Based on https://matplotlib.org/stable/gallery/animation/strip_chart.html#oscilloscope
+#  Based on https://learn.sparkfun.com/tutorials/graph-sensor-data-with-python-and-matplotlib/all
 from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import matplotlib.animation as ani
@@ -8,6 +8,7 @@ import struct
 import socket
 import warnings
 import threading
+import numpy as np
 
 global conn, PYNQ_address, s, xy, old_timestamp
 
@@ -15,74 +16,61 @@ HOST = "127.0.0.1"  # check ipconfig /all to match proper ip add
 PORT = 4929  # arbitrary, chosen here, must match at the client side
 
 THRESHOLD = 500  # uA
-SHOWN_TIME_WINDOW_s = 50
+SHOWN_TIME_WINDOW_s = 60
 T_VISUALIZE_ms = 100
 TRANS_LATENCY_ms = 8  # to be tuned based on observed dt
+MAX_X_TICKS = 10
+MAX_Y_TICKS = 10
+MAX_EXPECTED_Y_VALUE = 700  # current [uA]
+
+# Create figure for plotting
+fig = plt.figure()
+ax = [fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)]  # https://stackoverflow.com/a/11404223
+
+dim = int(SHOWN_TIME_WINDOW_s * 1000 / T_VISUALIZE_ms)  # How many samples will be shown at the same time
+
+x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))  #
+
+xs = [x_nums, x_nums]  # x axis numbers, based on the shown time window
+ys = [[0] * dim, [0] * dim]  # initializing data to zeros, they'll be updated by the samples
+
+line = [ax[0].plot(xs[0], ys[0])[0], ax[1].plot(xs[1], ys[1])[0]]
+xy = [[], []]
 
 
-class Scope:
-    def __init__(self, ax, maxt=SHOWN_TIME_WINDOW_s, dt=T_VISUALIZE_ms / 1000):
-        self.ax = ax
-        self.dt = dt
-        self.maxt = maxt
-        self.tdata = [0]
-        self.ydata = [0]
-        self.line = Line2D(self.tdata, self.ydata, linewidth=0.8, color="blue")
-        self.ax.add_line(self.line)
-        self.ax.set_ylim(-.1, 700)
-        # self.ax.set_ylim(80, 120)
-        self.ax.set_xlim(0, self.maxt)
-        loc = plticker.MultipleLocator(base=5.0)  # this locator puts ticks at regular intervals
-        self.ax.xaxis.set_major_locator(loc)
-        self.ax.yaxis.set_major_locator(plt.MaxNLocator(40))  # set number of Y-axis ticks
-        self.ax.grid(True)
+def x_format_func(value, tick_number):
+    return f"T+{(SHOWN_TIME_WINDOW_s - value):.2f}"
 
-    def update(self, xy_sample):
-        global xy, old_timestamp
-        xy_sample = xy[0] if xy != [] else [-1, -1]
-        current_timestamp = datetime.now()
 
-        # Resetting view if time goes beyond [SHOWN_TIME_WINDOW_s]
-        lastt = self.tdata[-1]
-        if lastt > self.tdata[0] + self.maxt:  # reset the arrays
-            self.tdata = [self.tdata[-1]]
-            self.ydata = [self.ydata[-1]]
-            self.ax.set_xlim(self.tdata[0], self.tdata[0] + self.maxt)
-            self.ax.axhline(linewidth=1, color='r', y=THRESHOLD)
-            self.ax.figure.canvas.draw()
+def update_data(i, ys):
+    global xy, old_timestamp
+    xy_sample = xy[0] if xy != [] else [-1, -1]
+    print(f"updating {xy_sample}")
 
-        # Updating x data
-        if len(self.tdata) == 1:
-            t = self.tdata[-1] + self.dt
-            old_timestamp = current_timestamp
-        else:
-            dt = (current_timestamp - old_timestamp).total_seconds()
-            t = self.tdata[-1] + dt
-            print(f"\tDEBUG: {current_timestamp}->[t={t},y={xy_sample[1]}](dt={dt},dev={dt - (T_VISUALIZE_ms / 1000)})")
-            old_timestamp = current_timestamp
-        self.tdata.append(t)
+    # Updating y data
+    ys[0].append(xy_sample[1])
 
-        # Updating y data
-        self.ydata.append(xy_sample[1])
+    # reducing to timewindow
+    ys[0] = ys[0][-dim:]
 
-        # Updating xy series
-        self.line.set_data(self.tdata, self.ydata)
+    # Updating xy series
+    line[0].set_ydata(ys[0])
 
-        # Setting threshold line
-        self.ax.axhline(linewidth=1, color='r', y=THRESHOLD)
+    # Signaling the user if data source is OK/NOK (by modifying the suptitle)
+    if xy_sample[0] == -1:  # emitter says that source is not OK
+        line[0].set_linewidth(60)
+        line[0].set_color("red")
+        fig.canvas.set_window_title('SOURCE NOK')
 
-        # Signaling the user if data source is OK/NOK
-        if xy_sample[0] == -1:  # emitter says that source is not OK
-            self.line.set_linewidth(6)
-            self.line.set_color("red")
-            self.ax.set_title('SOURCE NOT OK', fontsize=15, color='red', fontweight='bold', loc='right')
-        else:  # source is OK
-            self.line.set_linewidth(0.8)
-            self.line.set_color("blue")
-            self.ax.set_title('SOURCE OK', fontsize=15, color='green', fontweight='bold', loc='right')
+        # TODO try to change background color here in some way OR find another graphic way to signal source is NOK
 
-        # TODO add text with info about last threshold trespassing
-        return self.line,
+    else:  # source is OK
+        line[0].set_linewidth(0.8)
+        line[0].set_color("blue")
+        fig.canvas.set_window_title('SOURCE OK')
+
+    # TODO add text with info about last threshold trespassing
+    return line[0],
 
 
 def connection_init():
@@ -109,7 +97,6 @@ def connector():
 def data_gatherer():
     global xy
     unpacker = struct.Struct('f')
-    xy = []
     while True:
         data = conn.recv(unpacker.size)
         if not data:
@@ -129,9 +116,43 @@ if __name__ == '__main__':
     dg_thread = threading.Thread(target=data_gatherer, daemon=True)
     dg_thread.start()
 
-    fig, ax = plt.subplots()
-    scope = Scope(ax)
-    # ani = animation.FuncAnimation(fig, scope.update, data_emitter, init_func=frame_init, interval=T_VISUALIZE_ms)
-    _ = ani.FuncAnimation(fig, scope.update,
-                          interval=T_VISUALIZE_ms - TRANS_LATENCY_ms)  # do not turn on blitting! had problems with repetition of update function
+    ax[0].set_title('First Plot', loc='left')
+
+    # X-axis formatting
+    ax[0].set_xlim(0, SHOWN_TIME_WINDOW_s)
+    plt.setp(ax[0].get_xticklabels(),
+             rotation=30,
+             ha="right",
+             rotation_mode="anchor",
+             fontsize=8)  # https://github.com/matplotlib/matplotlib/issues/13774#issuecomment-478250353
+    ax[0].xaxis.set_major_formatter(plt.FuncFormatter(x_format_func))  # set formatter for X-axis labels
+    ax[0].xaxis.set_major_locator(plt.MaxNLocator(MAX_X_TICKS))  # set number of X-axis ticks
+    # Y-axis formatting
+    ax[0].set_ylim(-.1, MAX_EXPECTED_Y_VALUE)
+    ax[0].tick_params(axis='y',
+                      right=True,
+                      labelright=True)
+    ax[0].yaxis.set_major_locator(plt.MaxNLocator(MAX_Y_TICKS))  # set number of Y-axis ticks
+    # Threshold line
+    ax[0].axhline(linewidth=1,
+                  color='r',
+                  y=THRESHOLD)
+    # Other formatting
+    ax[0].grid(True)
+
+    # Overall figure formatting
+    plt.subplots_adjust(hspace=0.8)
+
+    # TODO find a way to display different data on different subplots
+    # ax[1].title.set_text('Second Plot')
+    # ax[1].set_ylim(-.1, 700)
+    # ax[1].tick_params(axis='x',
+    #                  labelrotation=45)
+    # ax[1].yaxis.set_major_locator(plt.MaxNLocator(10))  # set number of Y-axis ticks
+    # ax[1].axhline(linewidth=1,
+    #              color='r',
+    #              y=THRESHOLD)
+    # ax[1].grid(True)
+
+    _ = ani.FuncAnimation(fig, update_data, fargs=(ys,), interval=T_VISUALIZE_ms - TRANS_LATENCY_ms, blit=True)
     plt.show()
