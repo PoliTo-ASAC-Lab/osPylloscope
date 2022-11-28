@@ -18,8 +18,18 @@ if __name__ == '__main__':
     s.connect((HOST, PORT))
     print(f"CONNECTED\n")
 
+    cnt = 0
+    done = False
     while True:
         data = 500 * random.random()
+
+        if not done:
+            cnt += 1
+        if int(2 * 1000 / T_SAMPLE_ms) < cnt < int(5 * 1000 / T_SAMPLE_ms):
+            data = 600 + 10 * random.random()
+        if cnt > int(5 * 1000 / T_SAMPLE_ms):
+            done = True
+
         print(f"{dt.now().strftime('%H:%M:%S.%f')},{data}")
 
         packed_data = packer.pack(data)

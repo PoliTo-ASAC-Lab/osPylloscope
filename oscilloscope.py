@@ -1,8 +1,6 @@
 #  Based on https://learn.sparkfun.com/tutorials/graph-sensor-data-with-python-and-matplotlib/all
-from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import matplotlib.animation as ani
-import matplotlib.ticker as plticker
 from datetime import datetime
 import struct
 import socket
@@ -17,13 +15,15 @@ PORT = 4929  # arbitrary, chosen here, must match at the client side
 
 # General parameters
 T_VISUALIZE_ms = 100
-SHOWN_TIME_WINDOW_s = 20
-T_DELAY_GRAPH = 7
+SHOWN_TIME_WINDOW_s = 10
+T_DELAY_GRAPH = 7  # to be tuned to have realistic visualized samples/s
 # Subplots parameters
-THRESHOLD = [500, 500]  # Red horizontal line will be drawn at this level
+data_cardinality = 2  # how many data (->subplot) have to be shown
+THRESHOLD = [500.0, 500.0]  # Red horizontal line will be drawn at this level
 MAX_X_TICKS = [10, 10]
 MAX_Y_TICKS = [10, 10]
 MAX_EXPECTED_Y_VALUE = [700, 700]
+MIN_EXPECTED_Y_VALUE = [-0.1, -0.1]
 PLOT_TITLE = ['Plot_1', 'Plot2']
 LINE_WIDTH = [0.5, 0.5]
 LINE_COLOR = ['blue', 'purple']  # https://matplotlib.org/stable/gallery/color/named_colors.html#css-colors
@@ -35,13 +35,19 @@ ax = [fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)]  # https://stackoverfl
 dim = int(SHOWN_TIME_WINDOW_s * 1000 / T_VISUALIZE_ms)  # How many samples will be shown at the same time
 
 x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))  #
+
+# TODO manage initialization given configuration parameter "data_cardinality"
+# TODO manage global/local variables
 xs = [x_nums, x_nums]  # x axis numbers, based on the shown time window
 ys = [[0] * dim, [0] * dim]  # initializing data to zeros, they'll be updated by the samples
 
 line_list = [ax[0].plot(xs[0], ys[0])[0], ax[1].plot(xs[1], ys[1])[0]]
+threshold_line_list = [line_list[0], line_list[1]]
 xy = [[], []]
 
 source_nok_flag = False
+threshold_trespassing_flag = [False, False]
+threshold_trespassing_cnt = [dim, dim]
 
 
 def x_format_func(value, tick_number):
@@ -49,9 +55,9 @@ def x_format_func(value, tick_number):
 
 
 def update_data(i, ys, line_list):
-    global xy, source_nok_flag
+    global xy, source_nok_flag, threshold_trespassing_flag
     xy_sample = xy[0] if xy != [] else [-1, -1]
-    print(f"updating {xy_sample}")
+    # print(f"updating {xy_sample}")
 
     # Updating y data
     ys[0].append(xy_sample[1])
@@ -67,20 +73,37 @@ def update_data(i, ys, line_list):
     if xy_sample[0] == -1:
         if not source_nok_flag:  # emitter says that source is not OK
             source_nok_flag = True
-            line_list[0].set_linewidth(60)
-            line_list[0].set_color("red")
+            for i in range(0, len(line_list)):
+                line_list[i].set_linewidth(60)
+                line_list[i].set_color("dimgrey")
             fig.canvas.set_window_title('SOURCE NOK')
-
-        # TODO try to change background color here in some way OR find another graphic way to signal source is NOK
-
     else:  # source is OK
         if source_nok_flag:
             source_nok_flag = False
-            line_list[0].set_linewidth(0.5)
-            line_list[0].set_color("blue")
+            for i in range(0, len(line_list)):
+                line_list[i].set_linewidth(LINE_WIDTH[i])
+                line_list[i].set_color(LINE_COLOR[i])
+                threshold_trespassing_flag[i] = False
+                threshold_trespassing_cnt[i] = dim
             fig.canvas.set_window_title('SOURCE OK')
 
-    # TODO add text with info about last threshold trespassing
+    # Checking threshold trespassing
+    if not source_nok_flag:  # only if source is OK
+        for i in range(0, len(line_list)):
+            if float(xy_sample[1]) > THRESHOLD[i]:
+                if not threshold_trespassing_flag[i]:
+                    threshold_trespassing_flag[i] = True
+                    line_list[i].set_linewidth(LINE_WIDTH[i])
+                    line_list[i].set_color("red")
+                    threshold_trespassing_cnt[i] = 0
+            else:
+                if threshold_trespassing_cnt[i] < dim:
+                    threshold_trespassing_cnt[i] += 1
+                elif threshold_trespassing_flag[i]:
+                    threshold_trespassing_flag[i] = False
+                    line_list[i].set_linewidth(LINE_WIDTH[i])
+                    line_list[i].set_color(LINE_COLOR[i])
+
     return line_list
 
 
@@ -119,9 +142,10 @@ def data_gatherer():
             x = datetime.now().strftime('%H:%M:%S.%f')
             xy = [[x, y]]
             # print(xy)
+        # TODO manage the gathering of multiple data from the source
 
 
-def pre_format_subplots(artist_list, line_list):
+def pre_format_subplots(artist_list, line_list, threshold_line_list):
     # Formatting subplots, passed as list of artists
     for i in range(0, len(artist_list)):
         artist_list[i].set_title(PLOT_TITLE[i], loc='right')
@@ -131,11 +155,11 @@ def pre_format_subplots(artist_list, line_list):
         artist_list[i].xaxis.set_major_formatter(plt.FuncFormatter(x_format_func))  # set formatter for X-axis labels
         artist_list[i].xaxis.set_major_locator(plt.MaxNLocator(MAX_X_TICKS[i]))  # set number of X-axis ticks
         # Y-axis formatting
-        artist_list[i].set_ylim(-.1, MAX_EXPECTED_Y_VALUE[i])
+        artist_list[i].set_ylim(MIN_EXPECTED_Y_VALUE[i], MAX_EXPECTED_Y_VALUE[i])
         artist_list[i].tick_params(axis='y', right=True, labelright=True)
         artist_list[i].yaxis.set_major_locator(plt.MaxNLocator(MAX_Y_TICKS[i]))  # set number of Y-axis ticks
         # Threshold line
-        artist_list[i].axhline(linewidth=1, color='r', y=THRESHOLD[i])
+        threshold_line_list[i] = artist_list[i].axhline(linewidth=1, color='r', y=THRESHOLD[i])
         # Other formatting
         artist_list[i].grid(True)
         line_list[i].set_linewidth(LINE_WIDTH[i])
@@ -148,7 +172,7 @@ if __name__ == '__main__':
     dg_thread = threading.Thread(target=data_gatherer, daemon=True)
     dg_thread.start()
 
-    pre_format_subplots(ax, line_list)
+    pre_format_subplots(ax, line_list, threshold_line_list)
 
     # Overall figure formatting
     fig.canvas.set_window_title('SOURCE OK')
