@@ -10,18 +10,23 @@ import warnings
 import threading
 import numpy as np
 
-global conn, PYNQ_address, s, xy, old_timestamp
+global conn, PYNQ_address, s, xy
 
 HOST = "127.0.0.1"  # check ipconfig /all to match proper ip add
 PORT = 4929  # arbitrary, chosen here, must match at the client side
 
-THRESHOLD = 500  # uA
-SHOWN_TIME_WINDOW_s = 60
+# General parameters
 T_VISUALIZE_ms = 100
-TRANS_LATENCY_ms = 8  # to be tuned based on observed dt
-MAX_X_TICKS = 10
-MAX_Y_TICKS = 10
-MAX_EXPECTED_Y_VALUE = 700  # current [uA]
+SHOWN_TIME_WINDOW_s = 20
+T_DELAY_GRAPH = 7
+# Subplots parameters
+THRESHOLD = [500, 500]  # Red horizontal line will be drawn at this level
+MAX_X_TICKS = [10, 10]
+MAX_Y_TICKS = [10, 10]
+MAX_EXPECTED_Y_VALUE = [700, 700]
+PLOT_TITLE = ['Plot_1', 'Plot2']
+LINE_WIDTH = [0.5, 0.5]
+LINE_COLOR = ['blue', 'purple']  # https://matplotlib.org/stable/gallery/color/named_colors.html#css-colors
 
 # Create figure for plotting
 fig = plt.figure()
@@ -30,20 +35,21 @@ ax = [fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)]  # https://stackoverfl
 dim = int(SHOWN_TIME_WINDOW_s * 1000 / T_VISUALIZE_ms)  # How many samples will be shown at the same time
 
 x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))  #
-
 xs = [x_nums, x_nums]  # x axis numbers, based on the shown time window
 ys = [[0] * dim, [0] * dim]  # initializing data to zeros, they'll be updated by the samples
 
-line = [ax[0].plot(xs[0], ys[0])[0], ax[1].plot(xs[1], ys[1])[0]]
+line_list = [ax[0].plot(xs[0], ys[0])[0], ax[1].plot(xs[1], ys[1])[0]]
 xy = [[], []]
+
+source_nok_flag = False
 
 
 def x_format_func(value, tick_number):
     return f"T+{(SHOWN_TIME_WINDOW_s - value):.2f}"
 
 
-def update_data(i, ys):
-    global xy, old_timestamp
+def update_data(i, ys, line_list):
+    global xy, source_nok_flag
     xy_sample = xy[0] if xy != [] else [-1, -1]
     print(f"updating {xy_sample}")
 
@@ -54,23 +60,28 @@ def update_data(i, ys):
     ys[0] = ys[0][-dim:]
 
     # Updating xy series
-    line[0].set_ydata(ys[0])
+    line_list[0].set_ydata(ys[0])
+    line_list[1].set_ydata(ys[0])
 
-    # Signaling the user if data source is OK/NOK (by modifying the suptitle)
-    if xy_sample[0] == -1:  # emitter says that source is not OK
-        line[0].set_linewidth(60)
-        line[0].set_color("red")
-        fig.canvas.set_window_title('SOURCE NOK')
+    # Signaling the user if data source is OK/NOK
+    if xy_sample[0] == -1:
+        if not source_nok_flag:  # emitter says that source is not OK
+            source_nok_flag = True
+            line_list[0].set_linewidth(60)
+            line_list[0].set_color("red")
+            fig.canvas.set_window_title('SOURCE NOK')
 
         # TODO try to change background color here in some way OR find another graphic way to signal source is NOK
 
     else:  # source is OK
-        line[0].set_linewidth(0.8)
-        line[0].set_color("blue")
-        fig.canvas.set_window_title('SOURCE OK')
+        if source_nok_flag:
+            source_nok_flag = False
+            line_list[0].set_linewidth(0.5)
+            line_list[0].set_color("blue")
+            fig.canvas.set_window_title('SOURCE OK')
 
     # TODO add text with info about last threshold trespassing
-    return line[0],
+    return line_list
 
 
 def connection_init():
@@ -110,49 +121,38 @@ def data_gatherer():
             # print(xy)
 
 
+def pre_format_subplots(artist_list, line_list):
+    # Formatting subplots, passed as list of artists
+    for i in range(0, len(artist_list)):
+        artist_list[i].set_title(PLOT_TITLE[i], loc='right')
+        # X-axis formatting
+        artist_list[i].set_xlim(0, SHOWN_TIME_WINDOW_s)
+        plt.setp(artist_list[i].get_xticklabels(), rotation=30, ha="right", rotation_mode="anchor", fontsize=8)
+        artist_list[i].xaxis.set_major_formatter(plt.FuncFormatter(x_format_func))  # set formatter for X-axis labels
+        artist_list[i].xaxis.set_major_locator(plt.MaxNLocator(MAX_X_TICKS[i]))  # set number of X-axis ticks
+        # Y-axis formatting
+        artist_list[i].set_ylim(-.1, MAX_EXPECTED_Y_VALUE[i])
+        artist_list[i].tick_params(axis='y', right=True, labelright=True)
+        artist_list[i].yaxis.set_major_locator(plt.MaxNLocator(MAX_Y_TICKS[i]))  # set number of Y-axis ticks
+        # Threshold line
+        artist_list[i].axhline(linewidth=1, color='r', y=THRESHOLD[i])
+        # Other formatting
+        artist_list[i].grid(True)
+        line_list[i].set_linewidth(LINE_WIDTH[i])
+        line_list[i].set_color(LINE_COLOR[i])
+
+
 if __name__ == '__main__':
     connection_init()
     connector()
     dg_thread = threading.Thread(target=data_gatherer, daemon=True)
     dg_thread.start()
 
-    ax[0].set_title('First Plot', loc='left')
-
-    # X-axis formatting
-    ax[0].set_xlim(0, SHOWN_TIME_WINDOW_s)
-    plt.setp(ax[0].get_xticklabels(),
-             rotation=30,
-             ha="right",
-             rotation_mode="anchor",
-             fontsize=8)  # https://github.com/matplotlib/matplotlib/issues/13774#issuecomment-478250353
-    ax[0].xaxis.set_major_formatter(plt.FuncFormatter(x_format_func))  # set formatter for X-axis labels
-    ax[0].xaxis.set_major_locator(plt.MaxNLocator(MAX_X_TICKS))  # set number of X-axis ticks
-    # Y-axis formatting
-    ax[0].set_ylim(-.1, MAX_EXPECTED_Y_VALUE)
-    ax[0].tick_params(axis='y',
-                      right=True,
-                      labelright=True)
-    ax[0].yaxis.set_major_locator(plt.MaxNLocator(MAX_Y_TICKS))  # set number of Y-axis ticks
-    # Threshold line
-    ax[0].axhline(linewidth=1,
-                  color='r',
-                  y=THRESHOLD)
-    # Other formatting
-    ax[0].grid(True)
+    pre_format_subplots(ax, line_list)
 
     # Overall figure formatting
+    fig.canvas.set_window_title('SOURCE OK')
     plt.subplots_adjust(hspace=0.8)
 
-    # TODO find a way to display different data on different subplots
-    # ax[1].title.set_text('Second Plot')
-    # ax[1].set_ylim(-.1, 700)
-    # ax[1].tick_params(axis='x',
-    #                  labelrotation=45)
-    # ax[1].yaxis.set_major_locator(plt.MaxNLocator(10))  # set number of Y-axis ticks
-    # ax[1].axhline(linewidth=1,
-    #              color='r',
-    #              y=THRESHOLD)
-    # ax[1].grid(True)
-
-    _ = ani.FuncAnimation(fig, update_data, fargs=(ys,), interval=T_VISUALIZE_ms - TRANS_LATENCY_ms, blit=True)
+    _ = ani.FuncAnimation(fig, update_data, fargs=(ys, line_list,), interval=T_VISUALIZE_ms - T_DELAY_GRAPH, blit=True)
     plt.show()
