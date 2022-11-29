@@ -19,58 +19,62 @@ PORT = 4929  # arbitrary, chosen here, must match at the client side
 
 # General parameters
 T_VISUALIZE_ms = 100
-SHOWN_TIME_WINDOW_s = 10
+SHOWN_TIME_WINDOW_s = 20
 T_DELAY_GRAPH = 7  # to be tuned to have realistic visualized samples/s
 # Subplots parameters
 DATA_CARDINALITY = 2  # how many data (->subplots) have to be shown
-THRESHOLD = [500.0, 500.0]  # Red horizontal line will be drawn at this level
-MAX_X_TICKS = [10, 10]
-MAX_Y_TICKS = [10, 10]
-MAX_EXPECTED_Y_VALUE = [700, 700]
-MIN_EXPECTED_Y_VALUE = [-0.1, -0.1]
-PLOT_TITLE = ['Plot_1', 'Plot2']
-LINE_WIDTH = [0.5, 0.5]
-LINE_COLOR = ['blue', 'purple']  # https://matplotlib.org/stable/gallery/color/named_colors.html#css-colors
+THRESHOLD = [500.0, 500.0, 500.0, 500.0, 500.0]  # Red horizontal line will be drawn at this level
+MAX_X_TICKS = [10, 10, 10, 10, 10]  #
+MAX_Y_TICKS = [10, 10, 10, 10, 10]  #
+MAX_EXPECTED_Y_VALUE = [700, 700, 700, 700, 700]  #
+MIN_EXPECTED_Y_VALUE = [-0.1, -0.1, -0.1, -0.1, -0.1]  #
+PLOT_TITLE = ['Plot1', 'Plot2', 'Plot3', 'Plot4', 'Plot5']  #
+LINE_WIDTH = [0.5, 0.5, 0.5, 0.5, 0.5]  #
+LINE_COLOR = ['b', 'g', 'm', 'k', 'b']  # https://matplotlib.org/stable/gallery/color/named_colors.html#css-colors
 
 # Create figure for plotting
-fig = plt.figure()
-ax = [fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)]  # https://stackoverflow.com/a/11404223
-
 dim = int(SHOWN_TIME_WINDOW_s * 1000 / T_VISUALIZE_ms)  # How many samples will be shown at the same time
-
-# TODO manage initialization given configuration parameter "data_cardinality"
-# TODO manage global/local variables
-x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))  #
+x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))
 xs = [x_nums] * DATA_CARDINALITY  # x axis numbers, based on the shown time window
 ys = [[0] * dim] * DATA_CARDINALITY  # initializing data to zeros, they'll be updated by the samples
 
-line_list = [ax[0].plot(xs[0], ys[0])[0], ax[1].plot(xs[1], ys[1])[0]]
-threshold_line_list = [line_list[0], line_list[1]]
-xy = [[], []]
-
+fig = plt.figure()
+# First Subplot
+ax = [fig.add_subplot(DATA_CARDINALITY, 1, 1)]
+line_list = [ax[0].plot(xs[0], ys[0])[0]]
+xy = [[]]
+thr_line_list = [line_list[0]]
+thr_flag = [False]
+thr_cnt = [dim]
+# Other subplots
+for i in range(1, DATA_CARDINALITY):
+    ax.append(fig.add_subplot(DATA_CARDINALITY, 1, i + 1))  # https://stackoverflow.com/a/11404223
+    line_list.append(ax[i].plot(xs[i], ys[i])[0])
+    xy.append([])
+    thr_line_list.append(line_list[i])
+    thr_flag.append(False)
+    thr_cnt.append(dim)
 source_nok_flag = False
-threshold_trespassing_flag = [False, False]
-threshold_trespassing_cnt = [dim, dim]
 
 
 def x_format_func(value, tick_number):
     return f"T+{(SHOWN_TIME_WINDOW_s - value):.2f}"
 
 
-def update_data(i, ys, line_list):
-    global xy, source_nok_flag, threshold_trespassing_flag
+def update_data(k):  # k = frame number, automatically passed by FuncAnimation
+    global source_nok_flag
     xy_sample = xy[0] if xy != [] else [-1, -1]
     # print(f"updating {xy_sample}")
 
     # Updating y data
     ys[0].append(xy_sample[1])
 
-    # reducing to timewindow
+    # cropping to time window
     ys[0] = ys[0][-dim:]
 
     # Updating xy series
-    line_list[0].set_ydata(ys[0])
-    line_list[1].set_ydata(ys[0])
+    for i in range(0, len(line_list)):
+        line_list[i].set_ydata(ys[0])
 
     # Signaling the user if data source is OK/NOK
     if xy_sample[0] == -1:
@@ -86,27 +90,26 @@ def update_data(i, ys, line_list):
             for i in range(0, len(line_list)):
                 line_list[i].set_linewidth(LINE_WIDTH[i])
                 line_list[i].set_color(LINE_COLOR[i])
-                threshold_trespassing_flag[i] = False
-                threshold_trespassing_cnt[i] = dim
+                thr_flag[i] = False
+                thr_cnt[i] = dim
             fig.canvas.manager.set_window_title('SOURCE OK')
 
     # Checking threshold trespassing
     if not source_nok_flag:  # only if source is OK
         for i in range(0, len(line_list)):
             if float(xy_sample[1]) > THRESHOLD[i]:
-                if not threshold_trespassing_flag[i]:
-                    threshold_trespassing_flag[i] = True
-                    line_list[i].set_linewidth(LINE_WIDTH[i])
+                if not thr_flag[i]:
+                    thr_flag[i] = True
+                    line_list[i].set_linewidth(LINE_WIDTH[i] + 2)
                     line_list[i].set_color("red")
-                    threshold_trespassing_cnt[i] = 0
+                    thr_cnt[i] = 0
             else:
-                if threshold_trespassing_cnt[i] < dim:
-                    threshold_trespassing_cnt[i] += 1
-                elif threshold_trespassing_flag[i]:
-                    threshold_trespassing_flag[i] = False
+                if thr_cnt[i] < dim:
+                    thr_cnt[i] += 1
+                elif thr_flag[i]:
+                    thr_flag[i] = False
                     line_list[i].set_linewidth(LINE_WIDTH[i])
                     line_list[i].set_color(LINE_COLOR[i])
-
     return line_list
 
 
@@ -119,19 +122,19 @@ def socket_init():
     return so
 
 
-def connector(socket, connection=None):
+def connector(so, connection=None):
     print("############################")
     print("############################")
     print("############################")
     print("Waiting for PYNQ to connect...", end='', flush=True)
-    connection, _ = socket.accept()
+    connection, _ = so.accept()
     print("PYNQ connected.")
     _ = connection.recv(8)
     _ = connection.recv(8)
     return connection
 
 
-def data_gatherer(socket, connection):
+def data_gatherer(so, connection):
     global xy
     unpacker = struct.Struct('f')
     while True:
@@ -139,7 +142,7 @@ def data_gatherer(socket, connection):
         if not data:
             print("\nDG: PYNQ disconnected!")
             xy.pop()  # removing valid data to be visualized
-            connection = connector(socket, connection)  # wait for new connection
+            connection = connector(so, connection)  # wait for new connection
         else:
             y = unpacker.unpack(data)[0]  # converting current measurement in float (it is sent as a bytearray)
             x = datetime.now().strftime('%H:%M:%S.%f')
@@ -148,25 +151,30 @@ def data_gatherer(socket, connection):
         # TODO manage the gathering of multiple data from the source
 
 
-def pre_format_subplots(artist_list, line_list, threshold_line_list):
+def pre_format_subplots(figure, a_list, l_list, threshold_line_list):
     # Formatting subplots, passed as list of artists
-    for i in range(0, len(artist_list)):
-        artist_list[i].set_title(PLOT_TITLE[i], loc='right')
+    for i in range(0, len(a_list)):
+        # Subplot formatting
+        a_list[i].set_title(PLOT_TITLE[i], loc='left')
         # X-axis formatting
-        artist_list[i].set_xlim(0, SHOWN_TIME_WINDOW_s)
-        plt.setp(artist_list[i].get_xticklabels(), rotation=30, ha="right", rotation_mode="anchor", fontsize=8)
-        artist_list[i].xaxis.set_major_formatter(plt.FuncFormatter(x_format_func))  # set formatter for X-axis labels
-        artist_list[i].xaxis.set_major_locator(plt.MaxNLocator(MAX_X_TICKS[i]))  # set number of X-axis ticks
+        a_list[i].set_xlim(0, SHOWN_TIME_WINDOW_s)
+        plt.setp(a_list[i].get_xticklabels(), rotation=30, ha="right", rotation_mode="anchor", fontsize=8)
+        a_list[i].xaxis.set_major_formatter(plt.FuncFormatter(x_format_func))  # set formatter for X-axis labels
+        a_list[i].xaxis.set_major_locator(plt.MaxNLocator(MAX_X_TICKS[i]))  # set number of X-axis ticks
         # Y-axis formatting
-        artist_list[i].set_ylim(MIN_EXPECTED_Y_VALUE[i], MAX_EXPECTED_Y_VALUE[i])
-        artist_list[i].tick_params(axis='y', right=True, labelright=True)
-        artist_list[i].yaxis.set_major_locator(plt.MaxNLocator(MAX_Y_TICKS[i]))  # set number of Y-axis ticks
+        a_list[i].set_ylim(MIN_EXPECTED_Y_VALUE[i], MAX_EXPECTED_Y_VALUE[i])
+        a_list[i].tick_params(axis='y', right=True, labelright=True)
+        a_list[i].yaxis.set_major_locator(plt.MaxNLocator(MAX_Y_TICKS[i]))  # set number of Y-axis ticks
         # Threshold line
-        threshold_line_list[i] = artist_list[i].axhline(linewidth=1, color='r', y=THRESHOLD[i])
+        threshold_line_list[i] = a_list[i].axhline(linewidth=1, color='r', y=THRESHOLD[i])
         # Other formatting
-        artist_list[i].grid(True)
-        line_list[i].set_linewidth(LINE_WIDTH[i])
-        line_list[i].set_color(LINE_COLOR[i])
+        a_list[i].grid(True)
+        l_list[i].set_linewidth(LINE_WIDTH[i])
+        l_list[i].set_color(LINE_COLOR[i])
+        # Overall figure formatting
+        figure.tight_layout()
+        figure.subplots_adjust(hspace=0.5)
+        figure.canvas.manager.set_window_title('SOURCE OK')
 
 
 if __name__ == '__main__':
@@ -175,13 +183,8 @@ if __name__ == '__main__':
     dg_thread = threading.Thread(target=data_gatherer, args=(s, conn,), daemon=True)
     dg_thread.start()
 
-    pre_format_subplots(ax, line_list, threshold_line_list)
+    pre_format_subplots(fig, ax, line_list, thr_line_list)
 
-    # Overall figure formatting
-    fig.canvas.manager.set_window_title('SOURCE OK')
-    plt.subplots_adjust(hspace=0.8)
-
-    args_tuple = (ys, line_list,)
-    _ = ani.FuncAnimation(fig, update_data, fargs=args_tuple, interval=T_VISUALIZE_ms - T_DELAY_GRAPH, blit=True)
+    _ = ani.FuncAnimation(fig, update_data, interval=T_VISUALIZE_ms - T_DELAY_GRAPH, blit=True)
     plt.get_current_fig_manager().window.state('zoomed')  # auto full screen https://stackoverflow.com/a/22418354
     plt.show()
