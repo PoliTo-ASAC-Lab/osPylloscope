@@ -11,7 +11,8 @@ import warnings
 import threading
 import numpy as np
 
-global conn, PYNQ_address, s, xy
+# global conn, PYNQ_address, s, xy
+global PYNQ_address, xy
 
 HOST = "127.0.0.1"  # check ipconfig /all to match proper ip add
 PORT = 4929  # arbitrary, chosen here, must match at the client side
@@ -21,7 +22,7 @@ T_VISUALIZE_ms = 100
 SHOWN_TIME_WINDOW_s = 10
 T_DELAY_GRAPH = 7  # to be tuned to have realistic visualized samples/s
 # Subplots parameters
-DATA_CARDINALITY = 2  # how many data (->subplot) have to be shown
+DATA_CARDINALITY = 2  # how many data (->subplots) have to be shown
 THRESHOLD = [500.0, 500.0]  # Red horizontal line will be drawn at this level
 MAX_X_TICKS = [10, 10]
 MAX_Y_TICKS = [10, 10]
@@ -109,36 +110,36 @@ def update_data(i, ys, line_list):
     return line_list
 
 
-def connection_init():
-    global s
+def socket_init():
     warnings.simplefilter("ignore", ResourceWarning)  # See https://stackoverflow.com/a/26620811
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, struct.Struct('f').size)  # https://stackoverflow.com/a/30888505
-    s.bind((HOST, PORT))
-    s.listen()
+    so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    so.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, struct.Struct('f').size)  # https://stackoverflow.com/a/30888505
+    so.bind((HOST, PORT))
+    so.listen()
+    return so
 
 
-def connector():
-    global conn
+def connector(socket, connection=None):
     print("############################")
     print("############################")
     print("############################")
     print("Waiting for PYNQ to connect...", end='', flush=True)
-    conn, _ = s.accept()
+    connection, _ = socket.accept()
     print("PYNQ connected.")
-    _ = conn.recv(8)
-    _ = conn.recv(8)
+    _ = connection.recv(8)
+    _ = connection.recv(8)
+    return connection
 
 
-def data_gatherer():
+def data_gatherer(socket, connection):
     global xy
     unpacker = struct.Struct('f')
     while True:
-        data = conn.recv(unpacker.size)
+        data = connection.recv(unpacker.size)
         if not data:
             print("\nDG: PYNQ disconnected!")
             xy.pop()  # removing valid data to be visualized
-            connector()  # wait for new connection
+            connection = connector(socket, connection)  # wait for new connection
         else:
             y = unpacker.unpack(data)[0]  # converting current measurement in float (it is sent as a bytearray)
             x = datetime.now().strftime('%H:%M:%S.%f')
@@ -169,9 +170,9 @@ def pre_format_subplots(artist_list, line_list, threshold_line_list):
 
 
 if __name__ == '__main__':
-    connection_init()
-    connector()
-    dg_thread = threading.Thread(target=data_gatherer, daemon=True)
+    s = socket_init()
+    conn = connector(s)
+    dg_thread = threading.Thread(target=data_gatherer, args=(s, conn,), daemon=True)
     dg_thread.start()
 
     pre_format_subplots(ax, line_list, threshold_line_list)
