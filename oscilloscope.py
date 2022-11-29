@@ -1,5 +1,4 @@
 #  Based on https://learn.sparkfun.com/tutorials/graph-sensor-data-with-python-and-matplotlib/all
-# TODO investigate https://stackoverflow.com/questions/18274137/how-to-animate-text-in-matplotlib
 # TODO investigate https://matplotlib.org/stable/gallery/animation/pause_resume.html
 
 import matplotlib.pyplot as plt
@@ -22,7 +21,7 @@ T_VISUALIZE_ms = 100
 SHOWN_TIME_WINDOW_s = 20
 T_DELAY_GRAPH = 7  # to be tuned to have realistic visualized samples/s
 # Subplots parameters
-DATA_CARDINALITY = 2  # how many data (->subplots) have to be shown
+DATA_CARDINALITY = 1  # how many data (->subplots) have to be shown
 THRESHOLD = [500.0, 500.0, 500.0, 500.0, 500.0]  # Red horizontal line will be drawn at this level
 MAX_X_TICKS = [10, 10, 10, 10, 10]  #
 MAX_Y_TICKS = [10, 10, 10, 10, 10]  #
@@ -55,6 +54,8 @@ for i in range(1, DATA_CARDINALITY):
     thr_flag.append(False)
     thr_cnt.append(dim)
 source_nok_flag = False
+source_text = [ax[0].text(SHOWN_TIME_WINDOW_s / 2, MAX_EXPECTED_Y_VALUE[0] / 2, "", ha="center", va="center",
+                          color="red", fontsize=40, fontweight="bold", bbox=dict(fc="lightgrey"))]
 
 
 def x_format_func(value, tick_number):
@@ -83,7 +84,9 @@ def update_data(k):  # k = frame number, automatically passed by FuncAnimation
             for i in range(0, len(line_list)):
                 line_list[i].set_linewidth(60)
                 line_list[i].set_color("dimgrey")
-            fig.canvas.manager.set_window_title('SOURCE NOK')
+            source_text[0].set_text("SOURCE NOK")
+            source_text[0].set_color("red")
+
     else:  # source is OK
         if source_nok_flag:
             source_nok_flag = False
@@ -92,7 +95,7 @@ def update_data(k):  # k = frame number, automatically passed by FuncAnimation
                 line_list[i].set_color(LINE_COLOR[i])
                 thr_flag[i] = False
                 thr_cnt[i] = dim
-            fig.canvas.manager.set_window_title('SOURCE OK')
+            source_text[0].set_text("")
 
     # Checking threshold trespassing
     if not source_nok_flag:  # only if source is OK
@@ -110,7 +113,8 @@ def update_data(k):  # k = frame number, automatically passed by FuncAnimation
                     thr_flag[i] = False
                     line_list[i].set_linewidth(LINE_WIDTH[i])
                     line_list[i].set_color(LINE_COLOR[i])
-    return line_list
+
+    return line_list + source_text
 
 
 def socket_init():
@@ -186,5 +190,6 @@ if __name__ == '__main__':
     pre_format_subplots(fig, ax, line_list, thr_line_list)
 
     _ = ani.FuncAnimation(fig, update_data, interval=T_VISUALIZE_ms - T_DELAY_GRAPH, blit=True)
+
     plt.get_current_fig_manager().window.state('zoomed')  # auto full screen https://stackoverflow.com/a/22418354
     plt.show()
