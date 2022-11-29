@@ -1,4 +1,7 @@
 #  Based on https://learn.sparkfun.com/tutorials/graph-sensor-data-with-python-and-matplotlib/all
+# TODO investigate https://stackoverflow.com/questions/18274137/how-to-animate-text-in-matplotlib
+# TODO investigate https://matplotlib.org/stable/gallery/animation/pause_resume.html
+
 import matplotlib.pyplot as plt
 import matplotlib.animation as ani
 from datetime import datetime
@@ -18,7 +21,7 @@ T_VISUALIZE_ms = 100
 SHOWN_TIME_WINDOW_s = 10
 T_DELAY_GRAPH = 7  # to be tuned to have realistic visualized samples/s
 # Subplots parameters
-data_cardinality = 2  # how many data (->subplot) have to be shown
+DATA_CARDINALITY = 2  # how many data (->subplot) have to be shown
 THRESHOLD = [500.0, 500.0]  # Red horizontal line will be drawn at this level
 MAX_X_TICKS = [10, 10]
 MAX_Y_TICKS = [10, 10]
@@ -34,12 +37,11 @@ ax = [fig.add_subplot(2, 1, 1), fig.add_subplot(2, 1, 2)]  # https://stackoverfl
 
 dim = int(SHOWN_TIME_WINDOW_s * 1000 / T_VISUALIZE_ms)  # How many samples will be shown at the same time
 
-x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))  #
-
 # TODO manage initialization given configuration parameter "data_cardinality"
 # TODO manage global/local variables
-xs = [x_nums, x_nums]  # x axis numbers, based on the shown time window
-ys = [[0] * dim, [0] * dim]  # initializing data to zeros, they'll be updated by the samples
+x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))  #
+xs = [x_nums] * DATA_CARDINALITY  # x axis numbers, based on the shown time window
+ys = [[0] * dim] * DATA_CARDINALITY  # initializing data to zeros, they'll be updated by the samples
 
 line_list = [ax[0].plot(xs[0], ys[0])[0], ax[1].plot(xs[1], ys[1])[0]]
 threshold_line_list = [line_list[0], line_list[1]]
@@ -76,7 +78,7 @@ def update_data(i, ys, line_list):
             for i in range(0, len(line_list)):
                 line_list[i].set_linewidth(60)
                 line_list[i].set_color("dimgrey")
-            fig.canvas.set_window_title('SOURCE NOK')
+            fig.canvas.manager.set_window_title('SOURCE NOK')
     else:  # source is OK
         if source_nok_flag:
             source_nok_flag = False
@@ -85,7 +87,7 @@ def update_data(i, ys, line_list):
                 line_list[i].set_color(LINE_COLOR[i])
                 threshold_trespassing_flag[i] = False
                 threshold_trespassing_cnt[i] = dim
-            fig.canvas.set_window_title('SOURCE OK')
+            fig.canvas.manager.set_window_title('SOURCE OK')
 
     # Checking threshold trespassing
     if not source_nok_flag:  # only if source is OK
@@ -175,8 +177,10 @@ if __name__ == '__main__':
     pre_format_subplots(ax, line_list, threshold_line_list)
 
     # Overall figure formatting
-    fig.canvas.set_window_title('SOURCE OK')
+    fig.canvas.manager.set_window_title('SOURCE OK')
     plt.subplots_adjust(hspace=0.8)
 
-    _ = ani.FuncAnimation(fig, update_data, fargs=(ys, line_list,), interval=T_VISUALIZE_ms - T_DELAY_GRAPH, blit=True)
+    args_tuple = (ys, line_list,)
+    _ = ani.FuncAnimation(fig, update_data, fargs=args_tuple, interval=T_VISUALIZE_ms - T_DELAY_GRAPH, blit=True)
+    plt.get_current_fig_manager().window.state('zoomed')  # auto full screen https://stackoverflow.com/a/22418354
     plt.show()
