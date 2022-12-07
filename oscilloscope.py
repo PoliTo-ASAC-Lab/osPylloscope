@@ -14,12 +14,13 @@ PORT = 4929  # arbitrary, chosen here, must match at the client side
 
 # General parameters
 T_VISUALIZE_ms = 100
-SHOWN_TIME_WINDOW_s = 20
-T_DELAY_GRAPH = 7  # to be tuned to have realistic visualized samples/s
+SHOWN_TIME_WINDOW_s = 30
+TRANS_DELAY = +32.379  # ms to be tuned according to TUNING PHASE
+TUNING_PHASE = False
 # Subplots parameters
 DATA_CARDINALITY = 3  # how many data (->subplots) have to be shown
-THRESHOLD = [500.0, 500.0, 500.0, 500.0, 500.0]  # Red horizontal line will be drawn at this level
-MAX_X_TICKS = [10, 10, 10, 10, 10]  #
+THRESHOLD = [599.0, 500.0, 500.0, 500.0, 500.0]  # Red horizontal line will be drawn at this level
+MAX_X_TICKS = [SHOWN_TIME_WINDOW_s, 10, 10, 10, 10]  #
 MAX_Y_TICKS = [10, 10, 10, 10, 10]  #
 MAX_EXPECTED_Y_VALUE = [700, 700, 700, 700, 700]  #
 MIN_EXPECTED_Y_VALUE = [-0.1, -0.1, -0.1, -0.1, -0.1]  #
@@ -28,7 +29,9 @@ LINE_WIDTH = [0.5, 0.5, 0.5, 0.5, 0.5]  #
 LINE_COLOR = ['b', 'g', 'm', 'k', 'b']  # https://matplotlib.org/stable/gallery/color/named_colors.html#css-colors
 
 # Create figure for plotting
-dim = int(SHOWN_TIME_WINDOW_s * 1000 / T_VISUALIZE_ms)  # How many samples will be shown at the same time
+dim = int(
+    SHOWN_TIME_WINDOW_s * 1000 / (T_VISUALIZE_ms + TRANS_DELAY))  # How many samples will be shown at the same time
+print(f"INFO: Plot will show {dim} samples at each update (time uncertainty window={T_VISUALIZE_ms / 1000}sec)")
 x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))
 xs = [x_nums] * DATA_CARDINALITY  # x-axis numbers, based on the shown time window
 ys = [[0] * dim] * DATA_CARDINALITY  # initializing data to zeros, they'll be updated by the samples
@@ -56,6 +59,9 @@ source_text = [ax[0].text(SHOWN_TIME_WINDOW_s / 2, MAX_EXPECTED_Y_VALUE[0] / 2, 
                           color="red", fontsize=40, fontweight="bold", bbox=dict(fc="lightgrey"))]
 paused_flag = False
 
+t_first_plot = ""
+t_last_plot = ""
+
 
 def socket_init():
     warnings.simplefilter("ignore", ResourceWarning)  # See https://stackoverflow.com/a/26620811
@@ -70,8 +76,8 @@ def connector(so, connection=None):
     print("Waiting for PYNQ to connect...", end='', flush=True)
     connection, _ = so.accept()
     print("PYNQ connected.")
-    _ = connection.recv(8)
-    _ = connection.recv(8)
+    # _ = connection.recv(8)
+    # _ = connection.recv(8)
     return connection
 
 
@@ -127,7 +133,7 @@ def x_format_func(value, tick_number):
 
 
 def frame_update(k):  # k = frame number, automatically passed by FuncAnimation
-    global source_nok_flag
+    global source_nok_flag, t_last_plot, t_first_plot, TUNING_PHASE
     xy_sample = xy[0] if xy != [] else [-1, -1]
     # print(f"updating {xy_sample}")
 
@@ -177,7 +183,20 @@ def frame_update(k):  # k = frame number, automatically passed by FuncAnimation
                     thr_flag[i] = False
                     line_list[i].set_linewidth(LINE_WIDTH[i])
                     line_list[i].set_color(LINE_COLOR[i])
-
+    if TUNING_PHASE:
+        if k == 0:
+            t_first_plot = datetime.strptime(str(xy_sample[0]), '%H:%M:%S.%f')
+        elif k == dim - 1:
+            t_last_plot = datetime.strptime(str(xy_sample[0]), '%H:%M:%S.%f')
+        elif k == dim:
+            delta_t_delay_computed = (((t_last_plot - t_first_plot).total_seconds()) - SHOWN_TIME_WINDOW_s) * 1000 / dim
+            exit(f"TUNING PHASE ENDED\n"
+                 f"Should have plotted {SHOWN_TIME_WINDOW_s}sec, t_first_plot={t_first_plot}, t_last_plot{t_last_plot}\n"
+                 f"Current TRANS_DELAY={TRANS_DELAY}ms, should be varied of {delta_t_delay_computed:+.3f}ms, new value "
+                 f"should be TRANS_DELAY={TRANS_DELAY + delta_t_delay_computed:+.3f}"
+                 f"\n\nSet TUNING_PHASE=False to stop repeating the tuning phase.")
+        else:
+            print(k, xy_sample[0], float(xy_sample[1]))
     return line_list + source_text
 
 
@@ -191,6 +210,10 @@ def animation_toggle_pause(event):
         paused_flag = not paused_flag
 
 
+def frame_init():
+    return line_list
+
+
 if __name__ == '__main__':
     s = socket_init()
     conn = connector(s)
@@ -199,7 +222,7 @@ if __name__ == '__main__':
 
     pre_format_subplots(fig, ax, line_list, thr_line_list)
 
-    animation = ani.FuncAnimation(fig, frame_update, interval=T_VISUALIZE_ms - T_DELAY_GRAPH, blit=True)
+    animation = ani.FuncAnimation(fig, frame_update, init_func=frame_init, interval=T_VISUALIZE_ms, blit=True)
 
     plt.get_current_fig_manager().window.state('zoomed')  # auto full screen https://stackoverflow.com/a/22418354
     plt.show()
