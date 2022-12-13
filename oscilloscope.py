@@ -13,10 +13,13 @@ HOST = "127.0.0.1"  # check ipconfig /all to match proper ip add
 PORT = 4929  # arbitrary, chosen here, must match at the client side
 
 # General parameters
-T_VISUALIZE_ms = 100
-SHOWN_TIME_WINDOW_s = 30
-TRANS_DELAY = +32.379  # ms to be tuned according to TUNING PHASE
-TUNING_PHASE = False
+T_VISUALIZE_ms = 200
+SHOWN_TIME_WINDOW_s = 20
+TRANS_DELAY = 12  # ms to be tuned according to TUNING PHASE
+TUNING_PHASE = True
+print(f"INFO: Tuning phase <{TUNING_PHASE}>")
+TUNING_ITER = 1
+TUNING_CUMULATIVE = 0
 # Subplots parameters
 DATA_CARDINALITY = 3  # how many data (->subplots) have to be shown
 THRESHOLD = [599.0, 500.0, 500.0, 500.0, 500.0]  # Red horizontal line will be drawn at this level
@@ -31,7 +34,7 @@ LINE_COLOR = ['b', 'g', 'm', 'k', 'b']  # https://matplotlib.org/stable/gallery/
 # Create figure for plotting
 dim = int(
     SHOWN_TIME_WINDOW_s * 1000 / (T_VISUALIZE_ms + TRANS_DELAY))  # How many samples will be shown at the same time
-print(f"INFO: Plot will show {dim} samples at each update (time uncertainty window={T_VISUALIZE_ms / 1000}sec)")
+print(f"INFO: Plot will show {dim} samples at each window update (T={T_VISUALIZE_ms / 1000}sec)")
 x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))
 xs = [x_nums] * DATA_CARDINALITY  # x-axis numbers, based on the shown time window
 ys = [[0] * dim] * DATA_CARDINALITY  # initializing data to zeros, they'll be updated by the samples
@@ -133,7 +136,7 @@ def x_format_func(value, tick_number):
 
 
 def frame_update(k):  # k = frame number, automatically passed by FuncAnimation
-    global source_nok_flag, t_last_plot, t_first_plot, TUNING_PHASE
+    global source_nok_flag, t_last_plot, t_first_plot, TUNING_PHASE, TUNING_ITER, TUNING_CUMULATIVE
     xy_sample = xy[0] if xy != [] else [-1, -1]
     # print(f"updating {xy_sample}")
 
@@ -186,17 +189,22 @@ def frame_update(k):  # k = frame number, automatically passed by FuncAnimation
     if TUNING_PHASE:
         if k == 0:
             t_first_plot = datetime.strptime(str(xy_sample[0]), '%H:%M:%S.%f')
-        elif k == dim - 1:
+        elif k == TUNING_ITER * dim - 1:
             t_last_plot = datetime.strptime(str(xy_sample[0]), '%H:%M:%S.%f')
-        elif k == dim:
+
+        elif k == TUNING_ITER * dim:
             delta_t_delay_computed = (((t_last_plot - t_first_plot).total_seconds()) - SHOWN_TIME_WINDOW_s) * 1000 / dim
-            exit(f"TUNING PHASE ENDED\n"
-                 f"Should have plotted {SHOWN_TIME_WINDOW_s}sec, t_first_plot={t_first_plot}, t_last_plot{t_last_plot}\n"
-                 f"Current TRANS_DELAY={TRANS_DELAY}ms, should be varied of {delta_t_delay_computed:+.3f}ms, new value "
-                 f"should be TRANS_DELAY={TRANS_DELAY + delta_t_delay_computed:+.3f}"
-                 f"\n\nSet TUNING_PHASE=False to stop repeating the tuning phase.")
+            TUNING_CUMULATIVE += TRANS_DELAY + delta_t_delay_computed
+            print(f"------------TUNING PHASE ENDED------------\n"
+                  f"Should have plotted {SHOWN_TIME_WINDOW_s}sec, actually plotted {(t_last_plot - t_first_plot).total_seconds()}\n "
+                  f"Current TRANS_DELAY={TRANS_DELAY}ms, should be varied of {delta_t_delay_computed:+.3f}ms, new value "
+                  f"should be TRANS_DELAY={TRANS_DELAY + delta_t_delay_computed:+.3f}"
+                  f"\nMean actual TRANS_DELAY is {(TUNING_CUMULATIVE / TUNING_ITER):+.3f}")
+            t_first_plot = t_last_plot
+            TUNING_ITER += 1
         else:
-            print(k, xy_sample[0], float(xy_sample[1]))
+            pass
+            # print(k, xy_sample[0], float(xy_sample[1]))
     return line_list + source_text
 
 
