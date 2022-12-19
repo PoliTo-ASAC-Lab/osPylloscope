@@ -5,6 +5,7 @@ import socket
 import struct
 
 # TODO clean code and create input config file
+# TODO make function to put triggers on data sampling, with related actions (e.g., beam off, DUT off)
 
 connection_error_string = "###########################################################################" \
                           "\n###########################################################################" \
@@ -16,7 +17,7 @@ conn_exceptions = (ConnectionAbortedError, ConnectionResetError, ConnectionRefus
 
 def connect_osPylloscope(HOST_, PORT_, DATA_CARDINALITY_):
     so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    so.settimeout(0.5)
+    so.settimeout(0.1)
     try:
         print(f"Connecting to particle count server (@{HOST_}:{PORT_})...", end='', flush=True)
         so.connect((HOST_, PORT_))

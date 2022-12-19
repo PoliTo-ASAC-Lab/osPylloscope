@@ -1,6 +1,6 @@
 #  Based on https://learn.sparkfun.com/tutorials/graph-sensor-data-with-python-and-matplotlib/all
 # TODO divide source code in main, library and conf
-
+import os
 import socket
 import struct
 import threading
@@ -15,13 +15,13 @@ HOST = "127.0.0.1"  # check ipconfig /all to match proper ip add
 PORT = 4929  # arbitrary, chosen here, must match at the client side
 
 # General parameters
-T_VISUALIZE_ms = 200
-SHOWN_TIME_WINDOW_s = 5
+T_VISUALIZE_ms = 200  # How much time [ms] between each sample and the following
+SHOWN_TIME_WINDOW_s = 5  # How many seconds of samples to show in the window
 TRANS_DELAY = 13.7  # ms to be tuned according to TUNING PHASE
-TUNING_PHASE = False
+TUNING_PHASE = False  # Tuning phase enabled/disabled
 print(f"INFO: Tuning phase <{TUNING_PHASE}>")
-TUNING_ITER = 1
-TUNING_CUMULATIVE = 0
+TUNING_ITER = 1  # Used for mean value of TRANS_DELAY tuning
+TUNING_CUMULATIVE = 0  # Used for mean value of TRANS_DELAY tuning
 
 # Subplots parameters
 DATA_CARDINALITY = 3  # how many data (->subplots) have to be shown
@@ -38,19 +38,21 @@ LINE_COLOR = ['b', 'g', 'm', 'k', 'b']  # https://matplotlib.org/stable/gallery/
 dim = int(
     SHOWN_TIME_WINDOW_s * 1000 / (T_VISUALIZE_ms + TRANS_DELAY))  # How many samples will be shown at the same time
 print(f"INFO: Plot will show {dim} samples at each window update (T={T_VISUALIZE_ms / 1000}sec)")
-x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))
-xs = [x_nums] * DATA_CARDINALITY  # x-axis numbers, based on the shown time window
-ys = [[0] * dim] * DATA_CARDINALITY  # initializing data to zeros, they'll be updated by the samples
+x_nums = list(np.linspace(0, SHOWN_TIME_WINDOW_s, dim))  # Numbers to be used in the x-axis ticks
+xs = [x_nums] * DATA_CARDINALITY  # Series of x-axis numbers, one for each subplot
+ys = [[0] * dim] * DATA_CARDINALITY  # initializing visualized data to zeros, they'll be updated by the actual samples
 
-fig = plt.figure()
-# First Subplot
-ax = [fig.add_subplot(DATA_CARDINALITY, 1, 1)]
-line_list = [ax[0].plot(xs[0], ys[0])[0]]
-xy = [[]]
-thr_line_list = [line_list[0]]
-thr_flag = [False]
-thr_cnt = [dim]
-# Other subplots
+fig = plt.figure()  # Main figure initialization
+
+# First Subplot initialization
+ax = [fig.add_subplot(DATA_CARDINALITY, 1, 1)]  # Matplotlib artists list
+line_list = [ax[0].plot(xs[0], ys[0])[0]]  # Matplotlib lines list
+xy = [[]]  # Contains the sample tuples arriving from source
+thr_line_list = [line_list[0]]  # Horizontal threshold lines
+thr_flag = [False]  # The threshold for the corresponding datum has been trespassed?
+thr_cnt = [dim]  # To keep trace of when the over-threshold samples go out of view
+
+# Other subplots initialization
 for i in range(1, DATA_CARDINALITY):
     ax.append(fig.add_subplot(DATA_CARDINALITY, 1, i + 1))  # https://stackoverflow.com/a/11404223
     line_list.append(ax[i].plot(xs[i], ys[i])[0])
@@ -58,15 +60,23 @@ for i in range(1, DATA_CARDINALITY):
     thr_line_list.append(line_list[i])
     thr_flag.append(False)
     thr_cnt.append(dim)
-# Other globals initialization
+
+# Other global vars initialization
 animation = []
-source_nok_flag = False
+source_nok_flag = False  # Source is NOK?
 source_text = [ax[0].text(SHOWN_TIME_WINDOW_s / 2, MAX_EXPECTED_Y_VALUE[0] / 2, "", ha="center", va="center",
                           color="red", fontsize=40, fontweight="bold", bbox=dict(fc="lightgrey"))]
-paused_flag = False
-t_first_plot = ""
-t_last_plot = ""
-dg_stop = threading.Event()
+paused_flag = False  # Animation is currently paused?
+t_first_plot = ""  # To store timestamp of first plotted sample
+t_last_plot = ""  # To store timestamp of last plotted sample
+dg_stop = threading.Event()  # Event to stop data gatherer thread
+ss_start_time = datetime.now().strftime("%Y%m%d_%H%M%S")  # Prefix for all the screenshots
+ss_cnt = 0
+
+
+def screenshot_folder_init():
+    if not os.path.exists("./screenshots/"):
+        os.mkdir("./screenshots/")
 
 
 def tuning_INFO():
@@ -141,8 +151,7 @@ def pre_format_subplots(figure, a_list, l_list, threshold_line_list):
     figure.subplots_adjust(hspace=0.5)
     figure.canvas.manager.set_window_title('osPylloscope')
     fig.canvas.mpl_connect('button_press_event', animation_toggle_pause)
-    text = "Double click anywhere to pause/unpause the visualization.\n" \
-           "(ATTENTION: incoming samples won't be shown during pause!)"
+    text = "Double click to pause/unpause & save plot in ./screenshots/   "
     plt.figtext(1, 0, text, va="bottom", ha="right", fontweight="bold", fontsize=10)
 
 
@@ -220,6 +229,10 @@ def frame_update(k):  # k = frame number, automatically passed by FuncAnimation
     return line_list + source_text
 
 
+def frame_init():
+    return line_list
+
+
 def animation_toggle_pause(event):
     # TODO add screenshot saving when pausing
     global paused_flag, animation
@@ -227,19 +240,25 @@ def animation_toggle_pause(event):
         if paused_flag:
             animation.resume()
         else:
+            take_screenshot()
             animation.pause()
         paused_flag = not paused_flag
 
 
-def frame_init():
-    return line_list
+def take_screenshot():
+    global ss_cnt, ss_start_time
+    ss_cnt += 1
+    plt.savefig(f"./screenshots/{ss_start_time}_{ss_cnt:02d}.pdf")
+    print(f"INFO: <./screenshots/{ss_start_time}_{ss_cnt:02d}.pdf> created!")
 
 
 if __name__ == '__main__':
-    s = socket_init()
-    conn = connector(s)
+    screenshot_folder_init()  # Creating, if necessary, the screenshots folder
 
-    tuning_INFO()
+    s = socket_init()  # Initializing the socket
+    conn = connector(s)  # Connecting with the source
+
+    tuning_INFO()  # Printing useful header for the tuning phase
 
     dg_thread = threading.Thread(target=data_gatherer, args=(s, conn,))
     dg_thread.start()
