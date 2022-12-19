@@ -7,11 +7,9 @@ import struct
 # TODO clean code and create input config file
 # TODO make function to put triggers on data sampling, with related actions (e.g., beam off, DUT off)
 
-connection_error_string = "###########################################################################" \
-                          "\n###########################################################################" \
-                          "\nosPylloscope not connected. Continuing logging the samples.\n" \
-                          "###########################################################################" \
-                          "\n###########################################################################"
+connection_error_msg = "###########################################################################" \
+                       "\nosPylloscope disconnected. Continuing sampling the data.\n" \
+                       "###########################################################################"
 conn_exceptions = (ConnectionAbortedError, ConnectionResetError, ConnectionRefusedError, TimeoutError)
 
 
@@ -32,48 +30,70 @@ def connect_osPylloscope(HOST_, PORT_, DATA_CARDINALITY_):
     return so, connected
 
 
+def data_sampling(data_, cnt_, T_SAMPLE_ms_):
+    # Dummy data creation
+    for k in range(len(data_)):
+        data_[k] = 500 * random.random()
+
+    if int(7 * 1000 / T_SAMPLE_ms_) <= cnt_ < int(10 * 1000 / T_SAMPLE_ms_):
+        data_[1] = 600 + 10 * random.random()
+    if cnt_ >= int(10 * 1000 / T_SAMPLE_ms_):
+        cnt_ = 0
+    else:
+        cnt_ += 1
+    return data_, cnt_
+
+
+def eval_triggers(data_, THRESHOLD_):
+    for k in range(len(data_)):
+        # print(f"{data_[k]} vs {[THRESHOLD_[k]]}")
+        if data_[k] >= THRESHOLD_[k]:
+            # DO SOMETHING
+            # DO SOMETHING
+            # DO SOMETHING
+            print(f"\tDATA[{k}] alert: {data_[k]:.4f} (thr_lvl={THRESHOLD_[k]})")
+            # DO SOMETHING
+            # DO SOMETHING
+            # DO SOMETHING
+
+
 if __name__ == '__main__':
 
     #   Sampling configuration
     T_SAMPLE_ms = 30
     DATA_CARDINALITY = 3
+    THRESHOLD = [500.0, 500.0, 500.0]  # Thresholds for the data
 
     #   Socket configuration
     HOST = "127.0.0.1"  # check ipconfig /all to match proper ip add
     PORT = 4929  # arbitrary, chosen here, must match at the client side
 
     # Necessary variables initialization
-    osPylloscope_OK = False
-    cnt = 0
     data = [0] * DATA_CARDINALITY
-    done = False
-    reconnect_cnt = 0
     packer = struct.Struct(f'{DATA_CARDINALITY}f')
+    osPylloscope_OK = False
+    reconnect_cnt = 0
+    cnt = 0
 
     # First connection to osPylloscope
     try:
         s, osPylloscope_OK = connect_osPylloscope(HOST, PORT, DATA_CARDINALITY)
     except conn_exceptions as e:
-        time.sleep(1)
-        print(connection_error_string)
-        time.sleep(1)
+        print(connection_error_msg)
+        time.sleep(2)
 
     # Sampling
     while True:
-        for k in range(DATA_CARDINALITY):  # creating dummy data
-            data[k] = 500 * random.random()
 
-        # if cnt < int(2 * 1000 / T_SAMPLE_ms):
-        if int(2 * 1000 / T_SAMPLE_ms) <= cnt < int(4 * 1000 / T_SAMPLE_ms):
-            data[1] = 600 + 10 * random.random()
-        if cnt >= int(4 * 1000 / T_SAMPLE_ms):
-            cnt = 0
-            # done = True # uncomment to perform a single spike/impulse
-        elif not done:
-            cnt += 1
+        data, cnt = data_sampling(data, cnt, T_SAMPLE_ms)
+
+        eval_triggers(data, THRESHOLD)
+
+        # print(f"{dt.now().strftime('%H:%M:%S.%f')} -> {data}[{cnt}]")
 
         packed_data = packer.pack(*data)
-        print(f"{dt.now().strftime('%H:%M:%S.%f')} -> {data}")
+
+        # Sending the sample
         try:
             if osPylloscope_OK:
                 s.sendall(packed_data)
@@ -83,7 +103,7 @@ if __name__ == '__main__':
             else:
                 reconnect_cnt += 1
         except conn_exceptions:
-            print(connection_error_string)
+            print(connection_error_msg)
             osPylloscope_OK = False
 
         time.sleep(T_SAMPLE_ms / 1000)
