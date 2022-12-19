@@ -5,7 +5,6 @@ import socket
 import struct
 
 # TODO clean code and create input config file
-# TODO make function to put triggers on data sampling, with related actions (e.g., beam off, DUT off)
 
 connection_error_msg = "###########################################################################" \
                        "\nosPylloscope disconnected. Continuing sampling the data.\n" \

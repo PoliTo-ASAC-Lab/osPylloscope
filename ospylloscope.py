@@ -234,7 +234,6 @@ def frame_init():
 
 
 def animation_toggle_pause(event):
-    # TODO add screenshot saving when pausing
     global paused_flag, animation
     if event.dblclick:
         if paused_flag:
