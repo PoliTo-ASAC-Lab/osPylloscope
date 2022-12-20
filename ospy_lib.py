@@ -1,9 +1,12 @@
-import os
-import socket
-import struct
-import warnings
 import matplotlib.animation as ani
 import matplotlib.pyplot as plt
+from datetime import datetime
+import numpy as np
+import threading
+import warnings
+import socket
+import struct
+import os
 
 from ospy_conf import *
 
@@ -75,7 +78,7 @@ def init_socket():
     return so
 
 
-def connector(so, connection=None):
+def connector(so):
     print(f"INFO: Waiting for data source to connect...", end='', flush=True)
     connection, _ = so.accept()
     connection.setblocking(True)
@@ -102,7 +105,7 @@ def data_gatherer(so, connection):
             if not data:
                 print("\nDataGatherer: source disconnected!")
                 xy = []  # removing valid data to be visualized
-                connection = connector(so, connection)  # wait for new connection
+                connection = connector(so)  # wait for new connection
                 xy = [[0, 0]] * DATA_CARDINALITY
             else:
                 y = list(unpacker.unpack(data))  # converting current measurement in float (it is sent as a bytearray)

@@ -1,6 +1,7 @@
 #  Based on https://learn.sparkfun.com/tutorials/graph-sensor-data-with-python-and-matplotlib/all
-import threading
 import matplotlib.pyplot as plt
+import threading
+
 import ospy_lib as ospy
 
 if __name__ == '__main__':
