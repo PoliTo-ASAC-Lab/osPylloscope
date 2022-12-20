@@ -1,5 +1,6 @@
 #  Based on https://learn.sparkfun.com/tutorials/graph-sensor-data-with-python-and-matplotlib/all
-from ospy_conf import *  # Configuration parameters
+import threading
+import matplotlib.pyplot as plt
 import ospy_lib as ospy
 
 if __name__ == '__main__':
